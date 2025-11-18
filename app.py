@@ -60,7 +60,7 @@ if uploaded_file is not None:
         # ------------------------------------------------------
         # SEND FIRST PAGE → FIND TABLE STRUCTURE
         # ------------------------------------------------------
-        API_KEY = st.secrets["NANONETS_API_KEY"]
+        API_KEY = st.secrets["API_KEY"]
         url = "https://extraction-api.nanonets.com/extract"
         headers = {"Authorization": f"Bearer {API_KEY}"}
 
