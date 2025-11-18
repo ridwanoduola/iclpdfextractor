@@ -61,7 +61,7 @@ if uploaded_file is not None:
         # SEND FIRST PAGE → FIND TABLE STRUCTURE
         # ------------------------------------------------------
         url = "https://extraction-api.nanonets.com/extract"
-        headers = {"Authorization": API_KEY}
+        headers = {"Authorization": NANONET_API_KEY}
 
         data1 = {
             "output_type": "markdown",
