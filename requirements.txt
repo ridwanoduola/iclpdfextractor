@@ -1,0 +1,8 @@
+streamlit
+pdfplumber
+beautifulsoup4
+pandas
+requests
+PyPDF2
+lxml
+html5lib
