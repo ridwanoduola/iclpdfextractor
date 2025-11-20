@@ -11,7 +11,7 @@ import io
 # ------------------------------------------------------
 # STREAMLIT UI
 # ------------------------------------------------------
-st.title("Bank Statement Extractor (Nanonets/OpenAI/Gemini)")
+st.title("Bank Statement Extractor (Nanonets)")
 st.write("Upload bank statement PDF file to extract transaction tables.")
 
 uploaded_file = st.file_uploader("Upload Bank PDF Statement", type=["pdf"])
@@ -41,22 +41,6 @@ if uploaded_file is not None:
             "file": ("first_page_only.pdf", first_page_buffer, "application/pdf")
         }
 
-        # --------------------------------------
-        # Extract ALL OTHER PAGES (in memory)
-        # --------------------------------------
-        other_pages_buffer = io.BytesIO()
-        other_pages_writer = PdfWriter()
-
-        for i in range(1, len(reader.pages)):
-            other_pages_writer.add_page(reader.pages[i])
-
-        other_pages_writer.write(other_pages_buffer)
-        other_pages_buffer.seek(0)
-
-        files_other_pages = {
-            "file": ("without_first_page.pdf", other_pages_buffer, "application/pdf")
-        }
-
         # ------------------------------------------------------
         # SEND FIRST PAGE → FIND TABLE STRUCTURE
         # ------------------------------------------------------
@@ -66,7 +50,7 @@ if uploaded_file is not None:
 
         data1 = {
             "output_type": "markdown",
-            "model": "openai"
+            "model": "nanonets"
         }
 
         response_first = requests.post(url, headers=headers, files=files_first_page, data=data1)
@@ -84,21 +68,26 @@ if uploaded_file is not None:
         fields = df_header.columns.values
 
         # ------------------------------------------------------
-        # SEND OTHER PAGES → EXTRACT TRANSACTIONS
+        # SEND ALL PAGES → EXTRACT TRANSACTIONS
         # ------------------------------------------------------
         data2 = {
             "output_type": "specified-fields",
-            "model": "openai",
+            "model": "nanonets",
             "specified_fields": ", ".join(fields)
         }
 
-        response_other = requests.post(url, headers=headers, files=files_other_pages, data=data2)
-        markdown_other = response_other.json()["content"]
+        
+        files = {
+            'file': open(uploaded_file, 'rb')
+        }
 
-        soup_other = BeautifulSoup(markdown_other, "html.parser")
+        response_all = requests.post(url, headers=headers, files=files, data=data2)
+        markdown_all = response_all.json()["content"]
+
+        soup_other = BeautifulSoup(markdown_all, "html.parser")
         tables_other = soup_other.find_all("table")
 
-        dfs_all = [df_header]
+        dfs_all = []
         for table in tables_other:
             df = pd.read_html(StringIO(str(table)))[0]
             dfs_all.append(df)
@@ -113,7 +102,7 @@ if uploaded_file is not None:
         # ------------------------------------------------------
         # DISPLAY RESULT
         # ------------------------------------------------------
-        st.subheader("📌 Extracted Transaction Data")
+        st.subheader("Extracted Transaction Data")
         st.dataframe(extracted_df)
 
         # ------------------------------------------------------
