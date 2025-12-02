@@ -8,7 +8,7 @@ from extract_utils import extract_all_data, extract_from_pdf_chunks_parallel
 # Load API key securely
 API_KEY = st.secrets["API_KEY"]
 
-st.title("📄 Bank Statement Extractor (Multi-Bank)")
+st.title("📄 Bank Statement Extractor")
 
 uploaded_file = st.file_uploader("Upload your bank statement PDF")
 
@@ -40,7 +40,7 @@ if uploaded_file is not None:
     headers = {"Authorization": f"Bearer {API_KEY}"}
 
     fp_file = {"file": ("first.pdf", pages[0], "application/pdf")}
-    fp_data = {"output_type": "markdown-financial-docs", "model": "openai"}
+    fp_data = {"output_type": "markdown-financial-docs", "model": "nanonets-ocr-s"}
 
     response = requests.post(url, files=fp_file, data=fp_data, headers=headers).json()
     fp_content = response.get("content", "")
@@ -65,7 +65,7 @@ if uploaded_file is not None:
         st.info("Extracting data in parallel…")
         pages_data = {
             "output_type": "specified-fields",
-            "model": "openai",
+            "model": "nanonets-ocr-s",
             "specified_fields": ", ".join(fields),
         }
 
