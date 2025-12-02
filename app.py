@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from io import StringIO
 
 from pdf_utils import extract_pdf_pages_from_bytes, chunk_pages
 from extract_utils import extract_all_data, extract_from_pdf_chunks_parallel
