@@ -1,121 +1,81 @@
 import streamlit as st
-import pdfplumber
-from io import StringIO
-from bs4 import BeautifulSoup
 import pandas as pd
-import requests
-import time
-from PyPDF2 import PdfReader, PdfWriter
-import io
 
-# ------------------------------------------------------
-# STREAMLIT UI
-# ------------------------------------------------------
-st.title("Bank Statement Extractor (Nanonets)")
-st.write("Upload bank statement PDF file to extract transaction tables.")
+from pdf_utils import extract_pdf_pages_from_bytes, chunk_pages
+from extract_utils import extract_all_data, extract_from_pdf_chunks_parallel
 
-uploaded_file = st.file_uploader("Upload Bank PDF Statement", type=["pdf"])
+# Load API key securely
+API_KEY = st.secrets["API_KEY"]
+
+st.title("📄 Bank Statement Extractor (Multi-Bank)")
+
+uploaded_file = st.file_uploader("Upload your bank statement PDF")
+
+chunk_size = st.number_input("Chunk size (pages per batch)", min_value=2, max_value=12, value=4)
 
 if uploaded_file is not None:
 
-    st.info("Processing PDF... Please wait.")
+    pdf_bytes = uploaded_file.read()
 
-    try:
-        start = time.time()
+    st.info("Extracting first page headers…")
 
-        # ------------------------------------------------------
-        # LOAD PDF IN MEMORY
-        # ------------------------------------------------------
-        reader = PdfReader(uploaded_file)
+    pages = extract_pdf_pages_from_bytes(pdf_bytes)
+    num_pages = len(pages)
 
-        # --------------------------------------
-        # Extract FIRST PAGE (in memory)
-        # --------------------------------------
-        first_page_buffer = io.BytesIO()
-        first_page_writer = PdfWriter()
-        first_page_writer.add_page(reader.pages[0])
-        first_page_writer.write(first_page_buffer)
-        first_page_buffer.seek(0)
+    # Extract headers from first page
+    first_page_bytes = pages[0].getvalue()
 
-        files_first_page = {
-            "file": ("first_page_only.pdf", first_page_buffer, "application/pdf")
-        }
+    import requests
+    url = "https://extraction-api.nanonets.com/extract"
+    headers = {"Authorization": f"Bearer {API_KEY}"}
 
-        # ------------------------------------------------------
-        # SEND FIRST PAGE → FIND TABLE STRUCTURE
-        # ------------------------------------------------------
-        API_KEY = st.secrets["API_KEY"]
-        url = "https://extraction-api.nanonets.com/extract"
-        headers = {"Authorization": f"Bearer {API_KEY}"}
+    fp_file = {"file": ("first.pdf", pages[0], "application/pdf")}
+    fp_data = {"output_type": "markdown-financial-docs", "model": "gemini"}
 
-        data1 = {
-            "output_type": "markdown",
-            "model": "nanonets"
-        }
+    response = requests.post(url, files=fp_file, data=fp_data, headers=headers).json()
+    fp_content = response.get("content", "")
 
-        response_first = requests.post(url, headers=headers, files=files_first_page, data=data1)
-        markdown_first = response_first.json()["content"]
+    # Extract headers
+    import bs4
+    soup = bs4.BeautifulSoup(fp_content, "html.parser")
+    tables = soup.find_all("table")
 
-        soup_first = BeautifulSoup(markdown_first, "html.parser")
-        tables_first = soup_first.find_all("table")
+    dfs = [pd.read_html(StringIO(str(t)))[0] for t in tables]
+    df_headers = max(dfs, key=lambda x: x.shape[1])
 
-        dfs_first = []
-        for table in tables_first:
-            df = pd.read_html(StringIO(str(table)))[0]
-            dfs_first.append(df)
+    fields = df_headers.columns.tolist()
 
-        df_header = max(dfs_first, key=lambda df: df.shape[1])
-        fields = df_header.columns.values
+    st.success(f"Detected {len(fields)} fields from first page.")
 
-        # ------------------------------------------------------
-        # SEND ALL PAGES → EXTRACT TRANSACTIONS
-        # ------------------------------------------------------
-        data2 = {
+    # Chunk pages for async extraction
+    if num_pages > 1:
+        st.info("Preparing page chunks…")
+        chunks = chunk_pages(pages, chunk_size=chunk_size)
+
+        st.info("Extracting data in parallel…")
+        pages_data = {
             "output_type": "specified-fields",
-            "model": "nanonets",
-            "specified_fields": ", ".join(fields)
+            "model": "gemini",
+            "specified_fields": ", ".join(fields),
         }
 
-        
-        files = {
-            'file': open(uploaded_file, 'rb')
-        }
-
-        response_all = requests.post(url, headers=headers, files=files, data=data2)
-        markdown_all = response_all.json()["content"]
-
-        soup_other = BeautifulSoup(markdown_all, "html.parser")
-        tables_other = soup_other.find_all("table")
-
-        dfs_all = []
-        for table in tables_other:
-            df = pd.read_html(StringIO(str(table)))[0]
-            dfs_all.append(df)
-
-        extracted_df = pd.concat(dfs_all).reset_index(drop=True)
-
-        end = time.time()
-
-        st.success("Extraction Completed Successfully!")
-        st.write(f"Execution Time: **{round(end - start, 2)} seconds**")
-
-        # ------------------------------------------------------
-        # DISPLAY RESULT
-        # ------------------------------------------------------
-        st.subheader("Extracted Transaction Data")
-        st.dataframe(extracted_df)
-
-        # ------------------------------------------------------
-        # DOWNLOAD RESULT AS CSV
-        # ------------------------------------------------------
-        csv_data = extracted_df.to_csv(index=False).encode("utf-8")
-
-        st.download_button(
-            label="⬇ Download Extracted Data (CSV)",
-            data=csv_data,
-            file_name="extracted_transactions.csv",
-            mime="text/csv"
+        extracted_raw = extract_from_pdf_chunks_parallel(
+            chunks, pages_data, API_KEY, max_workers=len(chunks)
         )
 
-    except Exception as e:
-        st.error(f"❌ An error occurred: {e}")
+        combined_text = "\n---\n".join(extracted_raw)
+
+        final_dfs = []
+        for block in combined_text.split("---"):
+            df = extract_all_data(block, fields)
+            if not df.empty:
+                final_dfs.append(df)
+
+        final_df = pd.concat(final_dfs).drop_duplicates().reset_index(drop=True)
+
+        st.success("Extraction Completed!")
+        st.dataframe(final_df)
+
+        # Download
+        csv = final_df.to_csv(index=False).encode()
+        st.download_button("Download as CSV", csv, "extracted.csv")
