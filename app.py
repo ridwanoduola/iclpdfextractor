@@ -12,8 +12,6 @@ st.title("📄 Bank Statement Extractor (Multi-Bank)")
 
 uploaded_file = st.file_uploader("Upload your bank statement PDF")
 
-chunk_size = st.number_input("Chunk size (pages per batch)", min_value=2, max_value=12, value=4)
-
 if uploaded_file is not None:
 
     pdf_bytes = uploaded_file.read()
@@ -22,6 +20,17 @@ if uploaded_file is not None:
 
     pages = extract_pdf_pages_from_bytes(pdf_bytes)
     num_pages = len(pages)
+
+    if num_pages <= 5:
+        chunk_size = 2
+    elif num_pages <=10:
+        chunk_size = 3
+    elif num_pages <= 15:
+        chunk_size = 4
+    elif num_pages <= 20:
+        chunk_size = 5
+    else:
+        chunk_size = 10
 
     # Extract headers from first page
     first_page_bytes = pages[0].getvalue()
