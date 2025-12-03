@@ -59,6 +59,22 @@ def extract_html_tables(content):
     dfs = [pd.read_html(io.StringIO(str(t)))[0] for t in tables]
     return pd.concat(dfs, ignore_index=True)
 
+############## JSON ONLY ###############
+
+def extract_json_only(content):
+  # Your original string
+  # Parse once
+  transactions = json.loads(content)
+  if isinstance(transactions['content'], list):
+    # Step 2: Extract ONLY the list inside "content" and convert straight to DataFrame
+    df = pd.DataFrame(transactions["content"])
+  elif isinstance(transactions['content'], dict):
+    # Step 2: Extract ONLY the list inside "content" and convert straight to DataFrame
+    df = pd.DataFrame.from_dict(transactions["content"], orient='index').T
+  else:
+    df = pd.DataFrame()
+  return df
+
 
 def extract_all_data(content, fields):
     km = build_key_map(fields)
@@ -74,6 +90,10 @@ def extract_all_data(content, fields):
 
     if "{" in new_content:
         dfs.append(quick_clean_block(new_content))
+
+    if '"metadata' in new_content and '"content' in new_content and '{' in new_content and '}' in new_content:
+        df = extract_json_only(new_content)
+        data.append(df)
 
     dfs = [df for df in dfs if isinstance(df, pd.DataFrame)]
 
